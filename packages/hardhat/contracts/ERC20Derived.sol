@@ -8,61 +8,131 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol"; 
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol"; 
 
+/**
+ * @dev extension of ERC20 that allows anyone to mint or burn the supply of
+ * this token against a reserve token (RT), directly from this contract. The
+ * shape of the bonding curve is not assumed and must be implemented through
+ * _areaUnderCurve() and _exchangeRate().
+ *
+ * At a given total supply, the mint curve acts as a price ceiling on the open
+ * market value of this token WRT the RT, and the burn curve acts as a floor.
+ * The burn curve is a scalar multiple [0, 1] of the mint curve, and any scalar
+ * multiple <1 introduces a difference between the contract's treasury balance
+ * and the reserve requirement to be solvent against full liquidation. The
+ * contract owner is granted full access to these excess funds.
+ *
+ * tl;dr
+ *   - public mint/burn of token against reserve token
+ *   - price window at given total supply (stabilization)
+ *   - supply-side adjustment based on market demand (more stabilization) 
+ *   - treasury seeding with portion of deposited funds
+ */
 abstract contract ERC20Derived is ERC20, Ownable {
+    IERC20 private _reserveToken;
     uint private _reserveRequirement;
-    address private _reserveTokenAddr;
-    uint private _exchangeRate; // exchange rate between reserve and derived token
-
+    uint private _priceWindowRatio;      // mint-to-burn ratio of derived<->reserve 
 
     constructor(
         string memory name_,
         string memory symbol_,
-        address reserveTokenAddr_, 
-        uint exchangeRate_
+        address reserveTokenAddr_
     ) ERC20(name_, symbol_) {
-        _reserveTokenAddr = reserveTokenAddr_;
-        _exchangeRate = exchangeRate_;
+        _reserveToken = IERC20(reserveTokenAddr_);
     }
 
     /**
-     * @dev returns the address of the reserve token
+     * @dev returns the reserve token used by the mint/burn mechanism
      */
-    function reserveAddress() public view returns (address) {
-        return _reserveTokenAddr;
+    function reserveToken() public view returns (IERC20) {
+        return _reserveToken;
+    }
+    
+    /**
+     * @dev returns the current balance of reserve tokens held in the treasury
+     */
+    function treasuryBalance() public view returns (uint) {
+        return _reserveToken.balanceOf(address(this));
     }
 
     /**
-     * @dev returns the address of the reserve token
+     * @dev returns this token's balance requirement of the reserve token.
+     * This is implemented by referencing updated contract data, rather than 
+     * live calculation as we expect since we expect (updates << references).
      */
     function reserveRequirement() public view returns (uint) {
         return _reserveRequirement;
-    }
-
-    function exchangeRate() public view returns (uint) {
-        return _exchangeRate;
     }
 
     /**
      * @dev mints the specified amount of tokens, given the caller has the
      * requisite balance of the reserve token required for mint.
      */
-    function mint(uint amount) external {
-        ERC20 reserveToken = ERC20(_reserveTokenAddr);
-        uint requiredDeposit = amount / _exchangeRate;                              // calculate cost of mint
-        require(reserveToken.balanceOf(_msgSender()) >= requiredDeposit);           // check that the caller has the requisite balance available
-        reserveToken.transferFrom(_msgSender(), address(this), requiredDeposit);    // transfer the reserve token amount from caller to this wallet
+    function mint(uint amount) external virtual {
+        uint requiredDeposit = calculateMintCost(amount);
+        _reserveToken.transferFrom(_msgSender(), address(this), requiredDeposit);   // RT allowance checks run implicitly on transfer
         _mint(_msgSender(), amount);                                                // transfer the purchased balance of this token to caller
+        _updateReserveRequirement();
     }
 
     /**
      * @dev burns the specified amount of this token from the callers wallet.
      * The caller is then refunded the amount due in the reserve token.
      */
-    function burn(uint amount) external {
-        _burn(_msgSender(), amount);                                    // should run requisite checks for us on the caller's wallet
-        uint refund = amount / _exchangeRate;                           // calculate refund due
-        ERC20 reserveToken = ERC20(_reserveTokenAddr);
-        reserveToken.transferFrom(address(this), _msgSender(), refund); // return the refund due
+    function burn(uint amount) external virtual {
+        _burn(_msgSender(), amount);                                        // RT requisite checks run implicitly
+        uint refund = calculateBurnReturn(amount);
+        _reserveToken.transferFrom(address(this), _msgSender(), refund);    // return the refund due
+        _updateReserveRequirement();
     }
+
+    /**
+     * @dev allows the owner of the contract to withdraw any treasury funds in
+     * excess of the reserve requirement (denominated in the reserve token).
+     */
+    function withdraw(uint amount) external virtual onlyOwner {
+        require(amount <= treasuryBalance() - _reserveRequirement);
+        _reserveToken.transferFrom(address(this), _msgSender(), amount);
+    }
+
+    /**
+     * @dev calculates the cost of minting this token WRT reserve token
+     */
+    function calculateMintCost(uint amount) public view virtual returns (uint) {
+       return _areaUnderCurve(totalSupply() + amount) - _areaUnderCurve(totalSupply());
+    }
+
+    /**
+     * @dev calculates the return of burning this token WRT reserve token
+     */
+    function calculateBurnReturn(uint amount) public view virtual returns (uint) {
+       return _priceWindowRatio * _areaUnderCurve(totalSupply()) - _areaUnderCurve(totalSupply() - amount) / 100;
+    }
+
+    /**
+     * @dev returns the exchange rate of this derived token in respect to the
+     * reserve token, at the current supply
+     */
+    function exchangeRate() public view virtual returns (uint) {
+        return _exchangeRate(totalSupply());
+    }
+        
+    /**
+     * @dev calculates and updates the reserve requirement, given current supply
+     */
+    function _updateReserveRequirement() internal virtual returns (uint) {
+        return _priceWindowRatio * _areaUnderCurve(totalSupply()) / 100;
+    }
+
+    /**
+     * @dev integrates the mint curve across the domain [0, amount]
+     */
+    function _areaUnderCurve(uint amount) internal view virtual returns (uint);
+
+    /**
+     * @dev calculates the current exchange rate of this derived token,
+     * against the reserve token
+     */
+    function _exchangeRate(uint) internal view virtual returns (uint);
+
 }
 
