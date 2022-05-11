@@ -1,12 +1,10 @@
-pragma solidity >=0.8.0 <0.9.0;
 //SPDX-License-Identifier: MIT
 
-import "@openzeppelin/contracts/utils/Context.sol"; 
+pragma solidity >=0.8.0 <0.9.0;
+
 import "@openzeppelin/contracts/access/Ownable.sol"; 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol"; 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol"; 
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol"; 
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol"; 
 
 /**
  * @dev extension of ERC20 that allows anyone to mint or burn the supply of
@@ -35,9 +33,11 @@ abstract contract ERC20Derived is ERC20, Ownable {
     constructor(
         string memory name_,
         string memory symbol_,
-        address reserveTokenAddr_
+        address reserveTokenAddr_,
+        uint priceWindowRatio_
     ) ERC20(name_, symbol_) {
         _reserveToken = IERC20(reserveTokenAddr_);
+        _priceWindowRatio = priceWindowRatio_;
     }
 
     /**
@@ -64,8 +64,39 @@ abstract contract ERC20Derived is ERC20, Ownable {
     }
 
     /**
+     * @dev calculates the cost of minting this token WRT reserve token
+     * NOTE: these calculations could be better optimized since updating the
+     *   reserve requirement already requires us to calculate the area under the
+     *   curve of the new supply 
+     */
+    function calculateMintCost(uint amount) public view virtual returns (uint) {
+       return _areaUnderCurve(totalSupply() + amount) - _areaUnderCurve(totalSupply());
+    }
+
+    /**
+     * @dev calculates the return of burning this token WRT reserve token
+     * NOTE: these calculations could be better optimized since updating the
+     *   reserve requirement already requires us to calculate the area under the
+     *   curve of the new supply 
+     */
+    function calculateBurnReturn(uint amount) public view virtual returns (uint) {
+       return _priceWindowRatio * _areaUnderCurve(totalSupply()) - _areaUnderCurve(totalSupply() - amount) / 100;
+    }
+
+    /**
+     * @dev returns the exchange rate of this derived token in respect to the
+     * reserve token, at the current supply
+     */
+    function exchangeRate() public view virtual returns (uint) {
+        return _exchangeRate(totalSupply());
+    }
+
+    /**
      * @dev mints the specified amount of tokens, given the caller has the
      * requisite balance of the reserve token required for mint.
+     * NOTE: these calculations could be better optimized since updating the
+     *   reserve requirement already requires us to calculate the area under the
+     *   curve of the new supply 
      */
     function mint(uint amount) external virtual {
         uint requiredDeposit = calculateMintCost(amount);
@@ -77,6 +108,9 @@ abstract contract ERC20Derived is ERC20, Ownable {
     /**
      * @dev burns the specified amount of this token from the callers wallet.
      * The caller is then refunded the amount due in the reserve token.
+     * NOTE: these calculations could be better optimized since updating the
+     *   reserve requirement already requires us to calculate the area under the
+     *   curve of the new supply 
      */
     function burn(uint amount) external virtual {
         _burn(_msgSender(), amount);                                        // RT requisite checks run implicitly
@@ -95,44 +129,29 @@ abstract contract ERC20Derived is ERC20, Ownable {
     }
 
     /**
-     * @dev calculates the cost of minting this token WRT reserve token
-     */
-    function calculateMintCost(uint amount) public view virtual returns (uint) {
-       return _areaUnderCurve(totalSupply() + amount) - _areaUnderCurve(totalSupply());
-    }
-
-    /**
-     * @dev calculates the return of burning this token WRT reserve token
-     */
-    function calculateBurnReturn(uint amount) public view virtual returns (uint) {
-       return _priceWindowRatio * _areaUnderCurve(totalSupply()) - _areaUnderCurve(totalSupply() - amount) / 100;
-    }
-
-    /**
-     * @dev returns the exchange rate of this derived token in respect to the
-     * reserve token, at the current supply
-     */
-    function exchangeRate() public view virtual returns (uint) {
-        return _exchangeRate(totalSupply());
-    }
-        
-    /**
      * @dev calculates and updates the reserve requirement, given current supply
+     * Q: should this be private to circumvent future fuckery?
      */
     function _updateReserveRequirement() internal virtual returns (uint) {
-        return _priceWindowRatio * _areaUnderCurve(totalSupply()) / 100;
+        uint value = _priceWindowRatio * _areaUnderCurve(totalSupply()) / 100;
+        emit ReserveRequirementUpdated(_msgSender(), value);
+        return value;
     }
 
     /**
-     * @dev integrates the mint curve across the domain [0, amount]
+     * @dev integrates the mint curve across the domain [0, supply]
      */
-    function _areaUnderCurve(uint amount) internal view virtual returns (uint);
+    function _areaUnderCurve(uint supply) internal view virtual returns (uint);
 
     /**
      * @dev calculates the current exchange rate of this derived token,
-     * against the reserve token
+     * against the reserve token at the given supply
      */
-    function _exchangeRate(uint) internal view virtual returns (uint);
+    function _exchangeRate(uint supply) internal view virtual returns (uint);
 
+
+    /**
+     * Events
+     */
+    event ReserveRequirementUpdated(address updater, uint value);
 }
-
