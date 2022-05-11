@@ -32,17 +32,25 @@ library FuzzyMath {
         // iteratively estimate b-root of subtotal
         uint z;
         est = subTotal;
-        if (b == 2) {               // simplified square root case
-            z = (subTotal + 1) / 2; // intial guess, could be improved
-            while (z < est) {
-                (est, z) = (z, (subTotal / z + z) / 2);
-            }
+        if (b == 2) {
+            est = sqrt(x);
         } else {
             uint8 b2 = b - 1;
             z = x**(a/b + 1) - 1;   // z < est, always
             while (z < est) {
                 (est, z) = (z, (subTotal / z**b2 + b2 * z) / b);
             }
+        }
+    }
+
+    /**
+     * @dev estimates the square root of an input
+     */
+    function sqrt(uint x) public pure returns (uint est) {
+        est = x;
+        uint z = (x + 1) / 2; // intial guess, could be improved
+        while (z < est) {
+            (est, z) = (z, (x / z + z) / 2);
         }
     }
 }

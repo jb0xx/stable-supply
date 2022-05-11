@@ -10,7 +10,8 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * @dev extension of ERC20Derived that applies a sublinear exponential mapping
  * as the conversion between the supply of the derived token and its price
  * against the reserve token. Uses some fuzzy estimates for calculating the
- * 
+ * mappings so will provide intermediate estimates for any inputs that are 
+ * non-perfect squares, cubes, etc
  */
 abstract contract ERC20DerivedExponential is ERC20Derived {
     struct MappingParams {  // p(x) = k * x^(n/d)^, where x is current supply
@@ -34,9 +35,11 @@ abstract contract ERC20DerivedExponential is ERC20Derived {
     ) ERC20Derived(name_, symbol_, reserveTokenAddr_, priceWindowRatio_) {
         // NOTE: this requirement is a bit strict, bounding to both numerator
         //   and denominator <= 5, but can be rememdied through optimizations
-        //   to the FuzzyMath Library. The n > d requirement though should stay
-        //   as a superlinear mapping makes no sense in terms of tokenomics
-        require(exponentDenominator_ <= 5 && exponentNumerator_ <= exponentDenominator_);
+        //   to the FuzzyMath Library. The n < d requirement should be enforced
+        //   as a superlinear mapping makes no sense in terms of tokenomics and
+        //   cases of n == d can be simplified to ERC20DerivedLinear at lower
+        //   gas costs
+        require(exponentDenominator_ <= 5 && exponentNumerator_ < exponentDenominator_);
         _priceMapping = MappingParams(
             exponentNumerator_,
             exponentDenominator_,
