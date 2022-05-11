@@ -4,7 +4,7 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol"; 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol"; 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol"; 
+// import "@openzeppelin/contracts/token/ERC20/IERC20.sol"; 
 
 /**
  * @dev extension of ERC20 that allows anyone to mint or burn the supply of
@@ -26,7 +26,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *   - treasury seeding with portion of deposited funds
  */
 abstract contract ERC20Derived is ERC20, Ownable {
-    IERC20 private _reserveToken;
+    ERC20 private _reserveToken;
     uint private _reserveRequirement;
     uint private _priceWindowRatio;      // mint-to-burn ratio of derived<->reserve 
 
@@ -36,14 +36,14 @@ abstract contract ERC20Derived is ERC20, Ownable {
         address reserveTokenAddr_,
         uint priceWindowRatio_
     ) ERC20(name_, symbol_) {
-        _reserveToken = IERC20(reserveTokenAddr_);
+        _reserveToken = ERC20(reserveTokenAddr_);
         _priceWindowRatio = priceWindowRatio_;
     }
 
     /**
      * @dev returns the reserve token used by the mint/burn mechanism
      */
-    function reserveToken() public view returns (IERC20) {
+    function reserveToken() public view returns (ERC20) {
         return _reserveToken;
     }
     
