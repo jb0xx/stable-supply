@@ -52,7 +52,8 @@ abstract contract ERC20DerivedLinear is ERC20Derived {
      * accounting for the decimal representations of the supply and k.
      */
     function _exchangeRate(uint supply) internal view override(ERC20Derived) returns (uint) {
-        return supply * _priceMapping.k / 10**_priceMapping.kDecimals;
+        return 10**reserveToken().decimals() * supply * _priceMapping.k
+            / 10**_priceMapping.kDecimals;
     }
 
     /**
@@ -61,7 +62,7 @@ abstract contract ERC20DerivedLinear is ERC20Derived {
      */
     function _areaUnderCurve(uint supply) internal view override(ERC20Derived) returns (uint) {
         uint supplyWhole = supply / 10**decimals();
-        return supplyWhole * supplyWhole * _priceMapping.k * 10**decimals() 
-            / 10**reserveToken().decimals() / 10**_priceMapping.kDecimals / 2;
+        return 10**reserveToken().decimals() * supplyWhole * supplyWhole * _priceMapping.k
+            / 10**_priceMapping.kDecimals / 2;
     }
 }

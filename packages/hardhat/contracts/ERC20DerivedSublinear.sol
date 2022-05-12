@@ -13,7 +13,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * mappings so will provide intermediate estimates for any inputs that are 
  * non-perfect squares, cubes, etc
  */
-abstract contract ERC20DerivedExponential is ERC20Derived {
+abstract contract ERC20DerivedSublinear is ERC20Derived {
     struct MappingParams {  // p(x) = k * x^(n/d)^, where x is current supply
         uint8 n;            // numerator of price mapping exponent
         uint8 d;            // denominator of price mapping exponent
@@ -73,11 +73,12 @@ abstract contract ERC20DerivedExponential is ERC20Derived {
             _priceMapping.d
         );
 
-        return rateRaw * _priceMapping.k * 10**decimals() / 10**_priceMapping.kDecimals;
+        return 10**reserveToken().decimals() * rateRaw * _priceMapping.k
+            / 10**_priceMapping.kDecimals;
     }
 
     /**
-     * @dev we integrate the price mapping equation, and correct for decimals
+     * @dev we integrate the price mapping equation [0, supply] and correct for decimals
      * ∫p(x)dx = k/(1 + n/d) * x^(1 + n/d)^
      *         = k*d/(n+d) * x^(n+d)/d^
      */
@@ -89,7 +90,7 @@ abstract contract ERC20DerivedExponential is ERC20Derived {
             _priceMapping.d
         );
         
-        return areaRaw * _priceMapping.k * _priceMapping.d * 10**decimals()
-            / 10**_priceMapping.kDecimals / (_priceMapping.n + _priceMapping.d);
+        return 10**reserveToken().decimals() * areaRaw * _priceMapping.k * _priceMapping.d 
+            / (_priceMapping.n + _priceMapping.d) / 10**_priceMapping.kDecimals;
     }
 }
