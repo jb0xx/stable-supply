@@ -27,8 +27,8 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  */
 abstract contract ERC20Derived is ERC20, Ownable {
     ERC20 private _reserveToken;
-    uint private _reserveRequirement;
-    uint private _priceWindowRatio;      // mint-to-burn ratio of derived<->reserve 
+    uint private _reserveRequirement;   // current reserve requirement, denominated in reserve token, with matching decimals
+    uint private _priceWindowRatio;     // mint-to-burn ratio of derived<->reserve, denominated as percent
 
     constructor(
         string memory name_,
@@ -80,7 +80,10 @@ abstract contract ERC20Derived is ERC20, Ownable {
      *   curve of the new supply 
      */
     function calculateBurnReturn(uint amount) public view virtual returns (uint) {
-       return _priceWindowRatio * _areaUnderCurve(totalSupply()) - _areaUnderCurve(totalSupply() - amount) / 100;
+       return _priceWindowRatio * (
+           _areaUnderCurve(totalSupply()) 
+           - _areaUnderCurve(totalSupply() - amount)
+        ) / 100;
     }
 
     /**
@@ -132,14 +135,15 @@ abstract contract ERC20Derived is ERC20, Ownable {
      * @dev calculates and updates the reserve requirement, given current supply
      * Q: should this be private to circumvent future fuckery?
      */
-    function _updateReserveRequirement() internal virtual returns (uint) {
+    function _updateReserveRequirement() internal virtual {
         uint value = _priceWindowRatio * _areaUnderCurve(totalSupply()) / 100;
         emit ReserveRequirementUpdated(_msgSender(), value);
-        return value;
+        _reserveRequirement = value;
     }
 
     /**
-     * @dev integrates the mint curve across the domain [0, supply]
+     * @dev integrates the mint curve across the domain [0, supply]. Answers
+     * should be returned with the same decimals as reserve token
      */
     function _areaUnderCurve(uint supply) internal view virtual returns (uint);
 
