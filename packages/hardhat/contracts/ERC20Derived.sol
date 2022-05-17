@@ -5,6 +5,7 @@ pragma solidity >=0.8.0 <0.9.0;
 import "@openzeppelin/contracts/access/Ownable.sol"; 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol"; 
 // import "@openzeppelin/contracts/token/ERC20/IERC20.sol"; 
+import "hardhat/console.sol";
 
 /**
  * @dev extension of ERC20 that allows anyone to mint or burn the supply of
@@ -70,7 +71,7 @@ abstract contract ERC20Derived is ERC20, Ownable {
      *   curve of the new supply 
      */
     function calculateMintCost(uint amount) public view virtual returns (uint) {
-       return _areaUnderCurve(totalSupply() + amount) - _areaUnderCurve(totalSupply());
+        return _areaUnderCurve(totalSupply() + amount) - _areaUnderCurve(totalSupply());
     }
 
     /**
@@ -80,7 +81,7 @@ abstract contract ERC20Derived is ERC20, Ownable {
      *   curve of the new supply 
      */
     function calculateBurnReturn(uint amount) public view virtual returns (uint) {
-       return _priceWindowRatio * (
+        return _priceWindowRatio * (
            _areaUnderCurve(totalSupply()) 
            - _areaUnderCurve(totalSupply() - amount)
         ) / 100;
@@ -116,8 +117,8 @@ abstract contract ERC20Derived is ERC20, Ownable {
      *   curve of the new supply 
      */
     function burn(uint amount) external virtual {
-        _burn(_msgSender(), amount);                                        // RT requisite checks run implicitly
         uint refund = calculateBurnReturn(amount);
+        _burn(_msgSender(), amount);                                        // RT requisite checks run implicitly
         _reserveToken.transferFrom(address(this), _msgSender(), refund);    // return the refund due
         _updateReserveRequirement();
     }
