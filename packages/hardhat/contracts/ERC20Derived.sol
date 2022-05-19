@@ -81,6 +81,7 @@ abstract contract ERC20Derived is ERC20, Ownable {
      *   curve of the new supply 
      */
     function calculateBurnReturn(uint amount) public view virtual returns (uint) {
+        require(amount <= totalSupply(), "ERC20Derived: burn > supply");
         return _priceWindowRatio * (
            _areaUnderCurve(totalSupply()) 
            - _areaUnderCurve(totalSupply() - amount)
@@ -119,6 +120,7 @@ abstract contract ERC20Derived is ERC20, Ownable {
     function burn(uint amount) external virtual {
         uint refund = calculateBurnReturn(amount);
         _burn(_msgSender(), amount);                                        // RT requisite checks run implicitly
+        _reserveToken.increaseAllowance(address(this), refund);
         _reserveToken.transferFrom(address(this), _msgSender(), refund);    // return the refund due
         _updateReserveRequirement();
     }
