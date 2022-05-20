@@ -21,7 +21,7 @@ describe("Testing Tokens", function () {
     }
   });
 
-  it("Checking we can mint/burn to signers", async function () {
+  it("Base Token: mint/burn", async function () {
     // check total supply then burn all balances to start over
     expect(await baseToken.totalSupply()).to.equal(initialBalance.mul(signers.length));
     for (let i=0; i < signers.length; i++) {
@@ -54,7 +54,7 @@ describe("Testing Tokens", function () {
   });
 
   // TODO: categorize this separately and add a beforeEach
-  it("Linear Bonding Mechanism (single)", async function () {
+  it("Derived Token: Linear Mechanism (single)", async function () {
     // p(x) = (1/1e3) * x
     // ∫p(x)dx = P(x) = (1/2e3) * x^2^
     const mintBurnRatio = 80;
@@ -111,9 +111,6 @@ describe("Testing Tokens", function () {
   }); 
 
   // test multiple mints in a row
-  it("Linear Bonding Mechanism (multiple, disordered)", async function () {
+  it("Derived Token: Linear Mechanism (multiple, disordered)", async function () {
   }); 
-
-
-
 });
