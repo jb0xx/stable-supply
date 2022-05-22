@@ -33,12 +33,12 @@ describe("Testing FuzzyMath", function () {
     for (let i = 1; fibs[i] < 3 * 10 ** 4; i++) {
       n = fibs[i];
       square = n ** 2;
-      console.log("\tinput: ", n)
+      // console.log("\tinput: ", n);
       expect(await fuzzyMath.fraxExp(square, 1, 2)).to.equal(n);
     }
   });
 
-  it.only("Perfect Cubic Roots", async function () {
+  it("Perfect Cubic Roots", async function () {
     let n, cube;
     
     for (let i = 1; fibs[i] < 10 ** 3; i++) {
@@ -71,8 +71,7 @@ describe("Testing FuzzyMath", function () {
     for (let n = 1; n < 10 ** 9; n += n) {
       console.log("n:", n);
       let guess = Math.floor(Math.sqrt(n));
-      console.log("guess:", guess);
-
+      // console.log("guess:", guess);
       expect(await fuzzyMath.fraxExp(n, 1, 2)).to.equal(guess);
     }
   });

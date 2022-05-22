@@ -29,20 +29,30 @@ library FuzzyMath {
         if (b % a == 0) (a, b) = (1, b / a);    // simplify
 
         uint subTotal = (a > 1) ? x**a : x;     // calculate subtotal with exponent numerator, prior to rooting
-        ans = subTotal;                         // initial guess for answer
         if (b == 2) return sqrt(subTotal);      // shortcut square root case
-        
-        uint z = x**(a/b + 1) - 1;              // z < ans, always
-        z = (z < 1000000000) ? z : 1000000000;  // potentially tighter guess, answer must be bounded by 1e9
-        z = (z > 1000) ? 1000: z; 
+
+        // figure out tight bound to answer 
+        // TODO: make it tighter
+        uint temp = subTotal;
+        uint8 subTotalMSB = 0;
+        while(temp > 0) {
+            subTotalMSB++;
+            temp = temp>>1;
+        }
+        uint guessBoundExp = subTotalMSB / b;
+        guessBoundExp += (subTotalMSB % b != 0) ? 1 : 0; // round exp up if not perfect power of 2
+        uint z = 2**guessBoundExp;
+
+        // console.log("z:", z, "subTotal:", subTotal);
 
         uint count = 0;
         uint8 b2 = b - 1;
+        ans = subTotal;                         // initial guess for answer
         while (z < ans) {
             count++;
-            console.log("loop",count);
             (ans, z) = (z, (subTotal / z**b2 + b2 * z) / b);
         }
+        console.log("num loops:",count);
     }
 
     /**
