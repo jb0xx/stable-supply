@@ -31,6 +31,8 @@ describe("Testing FuzzyMath", function () {
       n = fibs[i];
       square = n ** 2;
       expect(await fuzzyMath.fraxExp(square, 1, 2)).to.equal(n);
+      gasEst = await fuzzyMath.estimateGas.fraxExp(square, 1, 2) - 21000;
+      console.log(`x: ${square}, Gas: ${gasEst}`); // if it passes, our guess is the answer
     }
   });
 
@@ -40,10 +42,12 @@ describe("Testing FuzzyMath", function () {
       n = fibs[i];
       cube = n ** 3;
       expect(await fuzzyMath.fraxExp(cube, 1, 3)).to.equal(n);
+      gasEst = await fuzzyMath.estimateGas.fraxExp(cube, 1, 3) - 21000;
+      console.log(`x: ${cube}, Gas: ${gasEst}`); // if it passes, our guess is the answer
     }
   });
 
-  it.only("Imperfect n-roots", async function () {
+  it("Imperfect n-roots", async function () {
     let input, guess, gasEst, gasSum, numCases;
     
     for (let n=2; n < 10; n++) {
@@ -53,19 +57,19 @@ describe("Testing FuzzyMath", function () {
       while (input < 10 ** 9) {
         // console.log(`\nInput: ${input}`);
         guess = Math.floor(Math.pow(input, 1/n));
+        expect(await fuzzyMath.fraxExp(input, 1, n)).to.equal(guess);
+        
         gasEst = await fuzzyMath.estimateGas.fraxExp(input, 1, n) - 21000;
         // console.log(`  Gas: ${gasEst} Ans: ${guess}`); // if it passes, our guess is the answer
-        
-        expect(await fuzzyMath.fraxExp(input, 1, n)).to.equal(guess);
+        gasSum += gasEst;
         input = fibs[++index];
         numCases++;
-        gasSum += gasEst;
       }
       console.log(`Avg Gas Usage: ${gasSum/numCases} (across ${numCases} cases)`);
     }
   });
 
-  it.only("Perfect Roots w Arbitrary Fractional Exponents", async function () {
+  it("Perfect Roots w Arbitrary Fractional Exponents", async function () {
     let input, guess, gasEst, gasSum, numCases;
   
     for (let b = 2; b < 10; b++) {
@@ -73,15 +77,16 @@ describe("Testing FuzzyMath", function () {
       for (let a = 1; a < 10; a++) {
         console.log(`\nTesting x^(${a}/${b})`);
         gasSum = 0, numCases = 0;
-        for (let i = 1; i < 10; i++) {
-          input = i ** b;
+        for (let x = 1; x < 10; x++) {
+          input = x ** b;
           // console.log(`\nb: ${b}, a: ${a}, input: ${input}`);
           guess = Math.floor(Math.pow(input, a/b));
+          expect(await fuzzyMath.fraxExp(input, a, b)).to.equal(x ** a);
+          
           gasEst = await fuzzyMath.estimateGas.fraxExp(input, a, b) - 21000;
-          expect(await fuzzyMath.fraxExp(input, a, b)).to.equal(i ** a);
           // console.log(`  Gas: ${gasEst} Ans: ${guess}`); // if it passes, our guess is the answer
-          numCases++;
           gasSum += gasEst;
+          numCases++;
         }
         console.log(`Avg Gas Usage: ${gasSum/numCases} (across ${numCases} cases)`);
       }

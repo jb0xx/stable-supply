@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.0;
 
+// import "hardhat/console.sol";
+
 /**
  * @dev provides some functions for maths that are illegal under solidity rules
  */
@@ -10,8 +12,9 @@ library FuzzyMath {
     /**
      * @dev estimates the equation f(x) = x^(a/b)^
      * does so by calculating x^a^ and iterating to the b-root of that subtotal
-     * using a generalized form of the Babylonian Method
+     * using a generalized form of the Babylonian Method (rounded down to nearest whole #)
      * https://www.researchgate.net/publication/237415858_EXTENDING_THE_BABYLONIAN_ALGORITHM
+     * e
 
      * NOTE: greater inputs could be considered if this function were used to
      * estimate exponential mappings with a limited number of sig-figs
@@ -22,21 +25,20 @@ library FuzzyMath {
         require(a < 10, "need exponent numerator a < 10");
         require(x < 1000000000, "maximum input is 1e9");
 
-        // shortcuts n simpifications (224 gas) -- do we need these?
         unchecked {
+            // shortcuts + simpifications (224 gas) -- do we need these?
             if (x <= 1) return x;
             if (a % b == 0) return x ** (a / b);
-            if (b % a == 0) {   // worth? (122 gas)
+            if (b % a == 0) { 
                 b = b / a;
                 a = 1;
-                // (a, b) = (1, b / a);  // not sure why but inline assignment costs 10 extra gas
             }
             uint subTotal = (a > 1) ? x**a : x;     // calc subtotal w exp numerator, prior to rooting
             if (b == 2) return sqrt(subTotal);      // shortcut square root case
             
             // TODO: consider treating inputs differently depending on size?
 
-            // rough estimate of pow2 bound on x
+            // rough binary search for pow2 bound on x
             uint8 stepSizePow = 7;
             uint8 guessMSB = 128;
             while (stepSizePow > 2) {
@@ -66,13 +68,13 @@ library FuzzyMath {
             while (z < ans) {
                 ans = z;
                 z = (subTotal / z**b2 + b2 * z) / b;
-                // (ans, z) = (z, (subTotal / z**b2 + b2 * z) / b);
             }
         }
     }
 
     /**
      * @dev estimates the square root of an input using Babylonian Method
+     * (not much more performant on large numbers, due to lack of tight est bounding)
      * https://www.cs.utep.edu/vladik/2009/olg09-05a.pdf
      */
     function sqrt(uint x) public pure returns (uint ans) {
