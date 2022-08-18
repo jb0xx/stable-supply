@@ -13,7 +13,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  */
 abstract contract ERC20DerivedLinear is ERC20Derived {
     struct MappingParams {  // p(x) = k * x, where x is current supply
-        uint128 k;          // price mapping slope
+        uint128 k;          // slope of price mapping
         uint8 kDecimals;    // number of decimals k is denominated with
     }
 
@@ -24,7 +24,7 @@ abstract contract ERC20DerivedLinear is ERC20Derived {
         string memory symbol_,
         address reserveTokenAddr_,
         uint priceWindowRatio_,
-        uint128 priceSlope_,      
+        uint128 priceSlope_,
         uint8 priceSlopeDecimals_
     ) ERC20Derived(name_, symbol_, reserveTokenAddr_, priceWindowRatio_) {
         _priceMapping.k = priceSlope_;
@@ -63,6 +63,6 @@ abstract contract ERC20DerivedLinear is ERC20Derived {
     function _areaUnderCurve(uint supply) internal view override(ERC20Derived) returns (uint) {
         uint supplyWhole = supply / 10**decimals();
         return 10**reserveToken().decimals() * supplyWhole * supplyWhole * _priceMapping.k
-            / 10**_priceMapping.kDecimals / 2;
+            / (10**_priceMapping.kDecimals * 2);
     }
 }

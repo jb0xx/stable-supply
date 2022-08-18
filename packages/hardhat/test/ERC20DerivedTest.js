@@ -53,64 +53,69 @@ describe("Testing Tokens", function () {
     expect(await baseToken.totalSupply()).to.equal(totalSupply);
   });
 
-  // TODO: categorize this separately and add a beforeEach
-  it("Derived Token: Linear Mechanism (single)", async function () {
-    // p(x) = (1/1e3) * x
-    // ∫p(x)dx = P(x) = (1/2e3) * x^2^
+  describe("Derived Token Tests", function () {
+    // p(x) = 1e-3 * x
+    // ∫p(x)dx = P(x) = 5e-4 * x^2^
+    let cellBioToken;
     const mintBurnRatio = 80;
-    const mintBurnRatioParsed = ethers.utils.parseEther((mintBurnRatio/100.0).toString());
-    const JournalToken = await ethers.getContractFactory("JournalToken");
-    const cellBioToken = await JournalToken.deploy(
-      "Cellular Biology",
-      "CBIO",
-      baseToken.address,
-      mintBurnRatio,  // burn price : mint price
-      1000,           // slope of conversion price to supply
-      6               // decimals back of conversion price
-    );      
-    console.log("Base Token Address:\n\t", baseToken.address);
-    console.log("Derived Token Address:\n\t", cellBioToken.address);
-    console.log("Signer Address:\n\t", signers[0].address);
+    const priceSlope = 1000;
+    const priceSlopeDecimals = 6;
 
-    // ensure mint estimate matches our expectations
-    let mintAmt = ethers.utils.parseEther("10");
-    let mintCost = await cellBioToken.calculateMintCost(mintAmt);
-    expect(mintCost).to.equal(ethers.utils.parseEther(".05"));    // P(10) - P(0) = 1/20
+    beforeEach(async function () {      
+      const JournalToken = await ethers.getContractFactory("JournalToken");
+      cellBioToken = await JournalToken.deploy(
+        "Cellular Biology",
+        "CBIO",
+        baseToken.address,
+        mintBurnRatio,
+        priceSlope,
+        priceSlopeDecimals
+      );      
+      await cellBioToken.deployed();
 
-    // ensure we cannot burn with no supply
-    await expect(
-      cellBioToken.calculateBurnReturn(mintAmt)
-    ).to.be.revertedWith("ERC20Derived: burn > supply");
+      console.log("Base Token:\n\t", baseToken.address);
+      console.log("Derived Token:\n\t", cellBioToken.address);
+      console.log("Signer:\n\t", signers[0].address);
+    });
 
-    // check that token balances change as expected upon mint
-    await baseToken.connect(signers[0]).increaseAllowance(cellBioToken.address, mintCost);
-    await cellBioToken.connect(signers[0]).mint(mintAmt);
-    expect(await cellBioToken.totalSupply()).to.equal(mintAmt);
-    expect(await cellBioToken.balanceOf(signers[0].address)).to.equal(mintAmt);
-    expect(await baseToken.balanceOf(signers[0].address)).to.equal(initialBalance.sub(mintCost));
-    expect(await baseToken.balanceOf(cellBioToken.address)).to.equal(mintCost);
-    
-    // try minting again and ensure failure (allowance should no longer be met)
-    expect(await baseToken.allowance(signers[0].address, cellBioToken.address)).to.equal(0);
-    await expect(
-      cellBioToken.connect(signers[0]).mint(mintAmt)
-    ).to.be.revertedWith('ERC20: transfer amount exceeds allowance');
-    
-    // ensure burn estimate is correct
-    let mintRefund = await cellBioToken.calculateBurnReturn(mintAmt);
-    expect(mintRefund).to.equal(ethers.utils.parseEther(".04"));    // .08 * (P(10) - P(0)) = 1/25
+    it.only("Derived Token: Linear Mechanism (single)", async function () {
+      // ensure mint estimate matches our expectations
+      let mintAmt = ethers.utils.parseEther("10");
+      let mintCost = await cellBioToken.calculateMintCost(mintAmt);
+      console.log(`mintCost: ${mintCost}`);
+      expect(mintCost).to.equal(ethers.utils.parseEther(".05"));    // P(10) - P(0) = 1/20
 
-    // ensure correct balances after burn
-    await cellBioToken.connect(signers[0]).burn(mintAmt);
-    expect(await cellBioToken.balanceOf(signers[0].address)).to.equal(0);
-    expect(await cellBioToken.totalSupply()).to.equal(0);
-    expect(await baseToken.balanceOf(cellBioToken.address)).to.equal(mintCost.sub(mintRefund));
-    expect(
-      await baseToken.balanceOf(signers[0].address)
-    ).to.equal(initialBalance.sub(mintCost).add(mintRefund));
-  }); 
+      // ensure we cannot burn with no supply
+      await expect(
+        cellBioToken.calculateBurnReturn(mintAmt)
+      ).to.be.revertedWith("ERC20Derived: burn > supply");
 
-  // test multiple mints in a row
-  it("Derived Token: Linear Mechanism (multiple, disordered)", async function () {
-  }); 
+      // check that token balances change as expected upon mint
+      await baseToken.connect(signers[0]).increaseAllowance(cellBioToken.address, mintCost);
+      await cellBioToken.connect(signers[0]).mint(mintAmt);
+      expect(await cellBioToken.totalSupply()).to.equal(mintAmt);
+      expect(await cellBioToken.balanceOf(signers[0].address)).to.equal(mintAmt);
+      expect(await baseToken.balanceOf(signers[0].address)).to.equal(initialBalance.sub(mintCost));
+      expect(await baseToken.balanceOf(cellBioToken.address)).to.equal(mintCost);
+      
+      // try minting again and ensure failure (allowance should no longer be met)
+      expect(await baseToken.allowance(signers[0].address, cellBioToken.address)).to.equal(0);
+      await expect(
+        cellBioToken.connect(signers[0]).mint(mintAmt)
+      ).to.be.revertedWith('ERC20: insufficient allowance');
+      
+      // ensure burn estimate is correct
+      let mintRefund = await cellBioToken.calculateBurnReturn(mintAmt);
+      expect(mintRefund).to.equal(ethers.utils.parseEther(".04"));    // .08 * (P(10) - P(0)) = 1/25
+
+      // ensure correct balances after burn
+      await cellBioToken.connect(signers[0]).burn(mintAmt);
+      expect(await cellBioToken.balanceOf(signers[0].address)).to.equal(0);
+      expect(await cellBioToken.totalSupply()).to.equal(0);
+      expect(await baseToken.balanceOf(cellBioToken.address)).to.equal(mintCost.sub(mintRefund));
+      expect(
+        await baseToken.balanceOf(signers[0].address)
+      ).to.equal(initialBalance.sub(mintCost).add(mintRefund));
+    }); 
+  });
 });
