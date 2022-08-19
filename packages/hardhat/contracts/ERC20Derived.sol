@@ -25,11 +25,14 @@ import "hardhat/console.sol";
  *   - price window at given total supply (stabilization)
  *   - supply-side adjustment based on market demand (more stabilization) 
  *   - treasury seeding with portion of deposited funds
+ * 
  */
 abstract contract ERC20Derived is ERC20, Ownable {
     ERC20 private _reserveToken;
     uint private _reserveRequirement;   // current reserve requirement, denominated in reserve token, with matching decimals
     uint private _priceWindowRatio;     // mint-to-burn ratio of derived<->reserve, denominated as percent
+
+    event ReserveRequirementUpdated(address updater, uint value);
 
     constructor(
         string memory name_,
@@ -41,6 +44,11 @@ abstract contract ERC20Derived is ERC20, Ownable {
         _priceWindowRatio = priceWindowRatio_;
     }
 
+
+    /**
+    * Private Variable Getters
+    */
+    
     /**
      * @dev returns the reserve token used by the mint/burn mechanism
      */
@@ -58,29 +66,28 @@ abstract contract ERC20Derived is ERC20, Ownable {
     /**
      * @dev returns this token's balance requirement of the reserve token.
      * This is implemented by referencing updated contract data, rather than 
-     * live calculation as we expect since we expect (updates << references).
+     * live calculation as we expect (updates << references).
      */
     function reserveRequirement() public view returns (uint) {
         return _reserveRequirement;
     }
 
+
+    /**
+    * Public Calculations
+    */
+    
     /**
      * @dev calculates the cost of minting this token WRT reserve token
-     * NOTE: these calculations could be better optimized since updating the
-     *   reserve requirement already requires us to calculate the area under the
-     *   curve of the new supply 
      */
-    function calculateMintCost(uint amount) public view virtual returns (uint) {
+    function calculateMintCost(uint amount) public view returns (uint) {
         return _areaUnderCurve(totalSupply() + amount) - _areaUnderCurve(totalSupply());
     }
 
     /**
      * @dev calculates the return of burning this token WRT reserve token
-     * NOTE: these calculations could be better optimized since updating the
-     *   reserve requirement already requires us to calculate the area under the
-     *   curve of the new supply 
      */
-    function calculateBurnReturn(uint amount) public view virtual returns (uint) {
+    function calculateBurnReturn(uint amount) public view returns (uint) {
         require(amount <= totalSupply(), "ERC20Derived: burn > supply");
         return _priceWindowRatio * (
            _areaUnderCurve(totalSupply()) 
@@ -92,20 +99,22 @@ abstract contract ERC20Derived is ERC20, Ownable {
      * @dev returns the exchange rate of this derived token in respect to the
      * reserve token, at the current supply
      */
-    function exchangeRate() public view virtual returns (uint) {
+    function exchangeRate() public view returns (uint) {
         return _exchangeRate(totalSupply());
     }
+
+
+    /**
+    * Token Transfers
+    */
 
     /**
      * @dev mints the specified amount of tokens, given the caller has the
      * requisite balance of the reserve token required for mint.
-     * NOTE: these calculations could be better optimized since updating the
-     *   reserve requirement already requires us to calculate the area under the
-     *   curve of the new supply 
      */
     function mint(uint amount) external virtual {
         uint requiredDeposit = calculateMintCost(amount);
-        _reserveToken.transferFrom(_msgSender(), address(this), requiredDeposit);   // RT allowance checks run implicitly on transfer
+        _reserveToken.transferFrom(_msgSender(), address(this), requiredDeposit);   // resToken allowance checks run implicitly on transfer
         _mint(_msgSender(), amount);                                                // transfer the purchased balance of this token to caller
         _updateReserveRequirement();
     }
@@ -113,9 +122,7 @@ abstract contract ERC20Derived is ERC20, Ownable {
     /**
      * @dev burns the specified amount of this token from the callers wallet.
      * The caller is then refunded the amount due in the reserve token.
-     * NOTE: these calculations could be better optimized since updating the
-     *   reserve requirement already requires us to calculate the area under the
-     *   curve of the new supply 
+     * Consider restricting this if treasury is below reserve requirement
      */
     function burn(uint amount) external virtual {
         uint refund = calculateBurnReturn(amount);
@@ -133,6 +140,35 @@ abstract contract ERC20Derived is ERC20, Ownable {
         require(amount <= treasuryBalance() - _reserveRequirement);
         _reserveToken.transferFrom(address(this), _msgSender(), amount);
     }
+
+
+    /**
+    * Supply Modifiers (just wrapping original mint/burn)
+    *
+    * TODO: separate owner types so in/decreaseSupply() and withdraw() are
+    *  permissioned to separate entities
+    */
+
+    /**
+     * @dev expands supply, bypassing mint deposit requirement
+     */
+    function increaseSupply(uint amount) external virtual onlyOwner {
+        _mint(_msgSender(), amount);
+        _updateReserveRequirement();
+    }
+
+    /**
+     * @dev contracts supply without refunding reserve funds
+     */
+    function decreaseSupply(uint amount) external virtual onlyOwner {
+        _burn(_msgSender(), amount);
+        _updateReserveRequirement();
+    }
+
+
+    /**
+    * Internal Functions
+    */
 
     /**
      * @dev calculates and updates the reserve requirement, given current supply
@@ -156,9 +192,4 @@ abstract contract ERC20Derived is ERC20, Ownable {
      */
     function _exchangeRate(uint supply) internal view virtual returns (uint);
 
-
-    /**
-     * Events
-     */
-    event ReserveRequirementUpdated(address updater, uint value);
 }

@@ -17,10 +17,4 @@ contract BaseToken is ERC20, Ownable {
     function burn(address from, uint256 amount) public {
         _burn(from, amount);
     }
-    /**
-     * Overrides
-     */
-    function _mint(address to, uint256 amount) internal override(ERC20) {
-        super._mint(to, amount);
-    }
 }
