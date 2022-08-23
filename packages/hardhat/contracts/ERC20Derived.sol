@@ -31,7 +31,7 @@ abstract contract ERC20Derived is ERC20, Ownable {
     ERC20 private _reserveToken;
     uint private _reserveRequirement;   // current reserve requirement, denominated in reserve token, with matching decimals
     uint private _priceWindowRatio;     // mint-to-burn ratio of derived<->reserve, denominated as percent
-
+    
     event ReserveRequirementUpdated(address updater, uint value);
 
     constructor(
@@ -124,7 +124,7 @@ abstract contract ERC20Derived is ERC20, Ownable {
      * The caller is then refunded the amount due in the reserve token.
      * Consider restricting this if treasury is below reserve requirement
      */
-    function burn(uint amount) external virtual {
+    function burn(uint amount) external {
         uint refund = calculateBurnReturn(amount);
         _burn(_msgSender(), amount);                                        // RT requisite checks run implicitly
         _reserveToken.increaseAllowance(address(this), refund);

@@ -6,6 +6,7 @@ use(solidity);
 
 const errors = {
   ERC20BurnExceedsBalance: 'ERC20: burn amount exceeds balance',
+  ERC20TransferExceedsBalance: "transfer amount exceeds balance",
   ERC20InsufficientAllowance: 'ERC20: insufficient allowance',
   ERC20DerivedBurnExceeds: 'ERC20Derived: burn > supply',
   Ownable: 'Ownable: caller is not the owner',
@@ -38,8 +39,10 @@ describe("Testing Tokens", function () {
   });
 
   it("Base Token: mint/burn", async function () {
-    // check total supply then burn all balances to start over
+    // check total supply is correct
     expect(await baseToken.totalSupply()).to.equal(initialBalance.mul(signers.length));
+    
+    // burn all balances and ensure bags go to 0
     for (let i=0; i < signers.length; i++) {
       let balance = await baseToken.balanceOf(signers[i].address);
       await baseToken.burn(signers[i].address, balance);
@@ -48,12 +51,11 @@ describe("Testing Tokens", function () {
     expect(await baseToken.totalSupply()).to.equal(0);
 
     // seed a random number of wallets with a random number of tokens
-    // ensure balances are correct
     let totalSupply = initialBalance;
     await baseToken.mint(owner.address, initialBalance);
     expect(await baseToken.balanceOf(owner.address)).to.equal(initialBalance);
 
-    let seedBalance; 
+    let seedBalance;
     const indexSplit = Math.floor(Math.random() * signers.length);
     for (let i=0; i < indexSplit; i++) {
       seedBalance = ethers.utils.parseEther(
@@ -63,6 +65,8 @@ describe("Testing Tokens", function () {
       expect(await baseToken.balanceOf(signers[i].address)).to.equal(seedBalance);
       totalSupply = totalSupply.add(seedBalance);
     }
+
+    // ensure balances are correct
     for (let i=indexSplit; i < signers.length; i++) {
       expect(await baseToken.balanceOf(signers[i].address)).to.equal(0);
     }
@@ -72,14 +76,15 @@ describe("Testing Tokens", function () {
   describe("Derived Token Tests (Linear)", function () {
     // p(x) = 1e-3 * x
     // ∫p(x)dx = P(x) = 5e-4 * x^2^
-    let cellBioToken;
+    let derivToken;
     const mintBurnRatio = 80;
     const priceSlope = 1000;
     const priceSlopeDecimals = 6;
+    const scale = priceSlope / 10**priceSlopeDecimals;
 
     beforeEach(async function () {      
       const JournalToken = await ethers.getContractFactory("JournalToken");
-      cellBioToken = await JournalToken.deploy(
+      derivToken = await JournalToken.deploy(
         "Cellular Biology",
         "CBIO",
         baseToken.address,
@@ -87,30 +92,30 @@ describe("Testing Tokens", function () {
         priceSlope,
         priceSlopeDecimals
       );      
-      await cellBioToken.deployed();
+      await derivToken.deployed();
       // console.log("Base Token:\n\t", baseToken.address);
-      // console.log("Derived Token:\n\t", cellBioToken.address);
+      // console.log("Derived Token:\n\t", derivToken.address);
       // console.log("Signer:\n\t", signers[0].address);
     });
 
-    it.only("Checking Initial State", async function () {
-      expect(await cellBioToken.name()).to.equal('Cellular Biology');
-      expect(await cellBioToken.symbol()).to.equal('CBIO');
-      expect(await cellBioToken.reserveToken()).to.equal(baseToken.address);
-      expect(await cellBioToken.reserveRequirement()).to.equal(0);
-      expect(await cellBioToken.treasuryBalance()).to.equal(0);
-      expect(await cellBioToken.priceSlope()).to.equal(priceSlope);
-      expect(await cellBioToken.priceSlopeDecimals()).to.equal(priceSlopeDecimals);
+    it.only("Initial State", async function () {
+      expect(await derivToken.name()).to.equal('Cellular Biology');
+      expect(await derivToken.symbol()).to.equal('CBIO');
+      expect(await derivToken.reserveToken()).to.equal(baseToken.address);
+      expect(await derivToken.reserveRequirement()).to.equal(0);
+      expect(await derivToken.treasuryBalance()).to.equal(0);
+      expect(await derivToken.priceSlope()).to.equal(priceSlope);
+      expect(await derivToken.priceSlopeDecimals()).to.equal(priceSlopeDecimals);
     });
 
     it.only("Fiddling with Supply", async function () {
       // ensure permissioning is respected
       for (let i=0; i < signers.length; i++) {
         await expect(
-          cellBioToken.connect(signers[i]).increaseSupply(amts[1])
+          derivToken.connect(signers[i]).increaseSupply(amts[1])
         ).to.be.revertedWith(errors.Ownable);
         await expect(
-          cellBioToken.connect(signers[i]).decreaseSupply(amts[1])
+          derivToken.connect(signers[i]).decreaseSupply(amts[1])
         ).to.be.revertedWith(errors.Ownable);
       }
 
@@ -129,81 +134,113 @@ describe("Testing Tokens", function () {
         {dir: "-", amt: 1, newSupply: 0, error:""},
       ];
 
-      let testCase, reserveRequirement, reserveReqExpected, resReqExpectedBigNum;
+      let testCase, reserveRequirement, reserveReqExpected;
       for(let i=0; i < testCases.length; i++) {
         testCase = testCases[i];
         if (testCase.error == "") {
           if (testCase.dir == "+") {
-            await cellBioToken.increaseSupply(amts[testCase.amt]);
+            await derivToken.increaseSupply(amts[testCase.amt]);
           } else {
-            await cellBioToken.decreaseSupply(amts[testCase.amt]);
+            await derivToken.decreaseSupply(amts[testCase.amt]);
           }
         } else {
           if (testCase.dir == "+") {
             await expect(
-              cellBioToken.increaseSupply(amts[testCase.amt])
+              derivToken.increaseSupply(amts[testCase.amt])
             ).to.be.revertedWith(testCase.error);
           } else {
             await expect(
-              cellBioToken.decreaseSupply(amts[testCase.amt])
+              derivToken.decreaseSupply(amts[testCase.amt])
             ).to.be.revertedWith(testCase.error);
           }
         }
-        expect(await cellBioToken.treasuryBalance()).to.equal(0);
-        expect(await cellBioToken.totalSupply()).to.equal(amts[testCase.newSupply]);
-        reserveReqExpected = (mintBurnRatio / 100) * (priceSlope / 10**priceSlopeDecimals)/2 * testCase.newSupply**2; 
-        resReqExpectedBigNum = ethers.utils.parseEther(reserveReqExpected.toString());
-        reserveRequirement = await cellBioToken.reserveRequirement();
-        expect(resReqExpectedBigNum.sub(reserveRequirement).abs()).lt(100); // this actually represents a difference of lt 1e-16
+        expect(await derivToken.treasuryBalance()).to.equal(0);
+        expect(await derivToken.totalSupply()).to.equal(amts[testCase.newSupply]);
+        reserveReqExpected = (mintBurnRatio / 100) * scale/2 * testCase.newSupply**2; 
+        reserveRequirement = await derivToken.reserveRequirement();
+        expect(
+          ethers.utils.parseEther(reserveReqExpected.toString())
+          .sub(reserveRequirement).abs()
+        ).lt(100); // allow for difference of <1e-16 (for funky float math)
       }
     });
 
-    it.only("Single mint/burn Flow, Detailed", async function () {
+    it.only("Tx Validity in mint/burn Flow", async function () {
       // ensure mint estimate matches our expectations
       let mintAmt = amts[10];
-      let mintCost = await cellBioToken.calculateMintCost(mintAmt);
+      let mintCost = await derivToken.calculateMintCost(mintAmt);
       expect(mintCost).to.equal(ethers.utils.parseEther(".05"));    // P(10) - P(0) = 1/20
 
       // ensure we cannot calculate burn return with no supply
       await expect(
-        cellBioToken.calculateBurnReturn(mintAmt)
+        derivToken.calculateBurnReturn(mintAmt)
       ).to.be.revertedWith(errors.ERC20DerivedBurnExceeds);
 
       // check that token balances change as expected upon mint
-      await baseToken.connect(signers[0]).increaseAllowance(cellBioToken.address, mintCost);
-      await cellBioToken.connect(signers[0]).mint(mintAmt);
-      expect(await cellBioToken.totalSupply()).to.equal(mintAmt);
-      expect(await cellBioToken.balanceOf(signers[0].address)).to.equal(mintAmt);
+      await baseToken.connect(signers[0]).increaseAllowance(derivToken.address, mintCost);
+      await derivToken.connect(signers[0]).mint(mintAmt);
+      expect(await derivToken.totalSupply()).to.equal(mintAmt);
+      expect(await derivToken.balanceOf(signers[0].address)).to.equal(mintAmt);
       expect(await baseToken.balanceOf(signers[0].address)).to.equal(initialBalance.sub(mintCost));
-      expect(await baseToken.balanceOf(cellBioToken.address)).to.equal(mintCost);
+      expect(await baseToken.balanceOf(derivToken.address)).to.equal(mintCost);
       
       // check allowance is depleted, ensure minting fails now
-      expect(await baseToken.allowance(signers[0].address, cellBioToken.address)).to.equal(0);
+      expect(await baseToken.allowance(signers[0].address, derivToken.address)).to.equal(0);
       await expect(
-        cellBioToken.connect(signers[0]).mint(mintAmt)
+        derivToken.connect(signers[0]).mint(mintAmt)
       ).to.be.revertedWith(errors.ERC20InsufficientAllowance);
       
       // ensure we cannot calculate burn exceeding supply
-      await expect(
-        cellBioToken.calculateBurnReturn(mintAmt.mul(2))
-      ).to.be.revertedWith(errors.ERC20DerivedBurnExceeds);
+      for (let i=10; i>1; i--) {
+        await expect(
+          derivToken.calculateBurnReturn(mintAmt.mul(i))
+        ).to.be.revertedWith(errors.ERC20DerivedBurnExceeds);
+      }
 
-      // ensure burn estimates are correct
-      // TODO: add more test cases
-      let mintRefund = await cellBioToken.calculateBurnReturn(mintAmt);
-      expect(mintRefund).to.equal(ethers.utils.parseEther(".04"));    // .08 * (P(10) - P(0)) = 1/25
+      // ensure burn estimate is correct
+      let mintRefund = await derivToken.calculateBurnReturn(mintAmt);
+      expect(mintRefund).to.equal(ethers.utils.parseEther(".04"));    // .08 * (P(10)-P(0)) = 1/25
 
+      
       // ensure correct balances after burn
-      await cellBioToken.connect(signers[0]).burn(mintAmt);
-      expect(await cellBioToken.balanceOf(signers[0].address)).to.equal(0);
-      expect(await cellBioToken.totalSupply()).to.equal(0);
-      expect(await baseToken.balanceOf(cellBioToken.address)).to.equal(mintCost.sub(mintRefund));
+      await derivToken.connect(signers[0]).burn(mintAmt);
+      expect(await derivToken.balanceOf(signers[0].address)).to.equal(0);
+      expect(await derivToken.totalSupply()).to.equal(0);
+      expect(await baseToken.balanceOf(derivToken.address)).to.equal(mintCost.sub(mintRefund));
       expect(
         await baseToken.balanceOf(signers[0].address)
       ).to.equal(initialBalance.sub(mintCost).add(mintRefund));
 
-      // TODO: ensure poores can't mint
+      // ensure poores can't mint
+      let balance;
+      for (let i=0; i < signers.length; i++) {
+        balance = await baseToken.balanceOf(signers[i].address);
+        await baseToken.burn(signers[i].address, balance);
+      }
+      for (let i=0; i < signers.length; i++) {
+      await baseToken.connect(signers[i]).increaseAllowance(derivToken.address, mintCost);
+      await expect(
+          derivToken.connect(signers[i]).mint(mintAmt)
+        ).to.be.revertedWith(errors.ERC20TransferExceedsBalance);
+      }
+    }); 
 
+    // Test math on valid transactions 
+    it("Price Adjustments", async function () {
+      // write function for calculating mint and burn prices, based on curve parameters
+      function spotPrice() {}
+      function mintPrice() {}
+      function burnPrice() {}
+
+      // for varying supplies
+        // mint random value
+        // check spot price
+        // check aggregate burn refund for various values
+      
+      // for varying supplies
+        // burn random value
+        // check spot price
+        // check aggregate mint price for various values 
     }); 
   });
 });
