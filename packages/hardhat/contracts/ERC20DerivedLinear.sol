@@ -53,7 +53,7 @@ abstract contract ERC20DerivedLinear is ERC20Derived {
      */
     function _exchangeRate(uint supply) internal view override(ERC20Derived) returns (uint) {
         return 10**reserveToken().decimals() * supply * _priceMapping.k
-            / 10**_priceMapping.kDecimals;
+            / 10**_priceMapping.kDecimals / 10**decimals();
     }
 
     /**

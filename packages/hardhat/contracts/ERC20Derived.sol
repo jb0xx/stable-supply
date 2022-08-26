@@ -103,6 +103,13 @@ abstract contract ERC20Derived is ERC20, Ownable {
         return _exchangeRate(totalSupply());
     }
 
+    /**
+     * @dev returns the area under the curve at a specific supply
+     */
+    function areaUnderCurve(uint supply) public view returns (uint) {
+        return _areaUnderCurve(supply);
+    }
+
 
     /**
     * Token Transfers

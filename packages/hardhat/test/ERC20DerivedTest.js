@@ -13,16 +13,22 @@ const errors = {
 
 };
 
+//so sick of typing this out
+function parseEther(n) {return ethers.utils.parseEther(n);}
+
+function reverseParse(n) {return n.div(10**9).div(10**9).toNumber();}
+
+// retrieves parseEther translations of a set of values
 function getTokenAmts(start, end) {
   const valMap = new Map();
   for(let i = start; i <= end; i++) {
-    valMap[i] = ethers.utils.parseEther(i.toString());
+    valMap[i] = parseEther(i.toString());
   }
   return valMap;
 }
 
 describe("Testing Tokens", function () {
-  const initialBalance = ethers.utils.parseEther("10000");
+  const initialBalance = parseEther("10000");
   let amts = getTokenAmts(0, 20);
   let BaseToken, baseToken;
 
@@ -58,7 +64,7 @@ describe("Testing Tokens", function () {
     let seedBalance;
     const indexSplit = Math.floor(Math.random() * signers.length);
     for (let i=0; i < indexSplit; i++) {
-      seedBalance = ethers.utils.parseEther(
+      seedBalance = parseEther(
         Math.floor(Math.random() * 1000).toString()
       );
       await baseToken.mint(signers[i].address, seedBalance);
@@ -82,6 +88,18 @@ describe("Testing Tokens", function () {
     const priceSlopeDecimals = 6;
     const scale = priceSlope / 10**priceSlopeDecimals;
 
+    function spotPrice(supply) { return scale * supply; }
+    function areaUnderCurve(supply) {
+      return scale / 2 * supply * supply;
+    }
+    function mintTotal(supply, amt) {
+      return areaUnderCurve(amt+supply) - areaUnderCurve(supply);
+    }
+    function burnTotal(supply, amt) {
+      return mintBurnRatio / 100 * (areaUnderCurve(supply) - areaUnderCurve(supply-amt));
+    }
+
+
     beforeEach(async function () {      
       const JournalToken = await ethers.getContractFactory("JournalToken");
       derivToken = await JournalToken.deploy(
@@ -98,7 +116,7 @@ describe("Testing Tokens", function () {
       // console.log("Signer:\n\t", signers[0].address);
     });
 
-    it.only("Initial State", async function () {
+    it("Initial State", async function () {
       expect(await derivToken.name()).to.equal('Cellular Biology');
       expect(await derivToken.symbol()).to.equal('CBIO');
       expect(await derivToken.reserveToken()).to.equal(baseToken.address);
@@ -108,7 +126,7 @@ describe("Testing Tokens", function () {
       expect(await derivToken.priceSlopeDecimals()).to.equal(priceSlopeDecimals);
     });
 
-    it.only("Fiddling with Supply", async function () {
+    it("Fiddling with Supply", async function () {
       // ensure permissioning is respected
       for (let i=0; i < signers.length; i++) {
         await expect(
@@ -134,7 +152,7 @@ describe("Testing Tokens", function () {
         {dir: "-", amt: 1, newSupply: 0, error:""},
       ];
 
-      let testCase, reserveRequirement, reserveReqExpected;
+      let testCase, reserveReq, reserveReqExpected;
       for(let i=0; i < testCases.length; i++) {
         testCase = testCases[i];
         if (testCase.error == "") {
@@ -156,20 +174,18 @@ describe("Testing Tokens", function () {
         }
         expect(await derivToken.treasuryBalance()).to.equal(0);
         expect(await derivToken.totalSupply()).to.equal(amts[testCase.newSupply]);
-        reserveReqExpected = (mintBurnRatio / 100) * scale/2 * testCase.newSupply**2; 
-        reserveRequirement = await derivToken.reserveRequirement();
-        expect(
-          ethers.utils.parseEther(reserveReqExpected.toString())
-          .sub(reserveRequirement).abs()
-        ).lt(100); // allow for difference of <1e-16 (for funky float math)
+        reserveReqExpected = (mintBurnRatio / 100) * areaUnderCurve(testCase.newSupply); 
+        reserveReq = await derivToken.reserveRequirement();
+        expect(parseEther(reserveReqExpected.toFixed(12))).to.equal(reserveReq);
       }
     });
 
-    it.only("Tx Validity in mint/burn Flow", async function () {
+    it("Tx Validity in mint/burn Flow", async function () {
       // ensure mint estimate matches our expectations
-      let mintAmt = amts[10];
+      let mintAmtRaw = 10;
+      let mintAmt = amts[mintAmtRaw];
       let mintCost = await derivToken.calculateMintCost(mintAmt);
-      expect(mintCost).to.equal(ethers.utils.parseEther(".05"));    // P(10) - P(0) = 1/20
+      expect(mintCost).to.equal(parseEther(".05"));    // P(10) - P(0) = 1/20
 
       // ensure we cannot calculate burn return with no supply
       await expect(
@@ -198,18 +214,18 @@ describe("Testing Tokens", function () {
       }
 
       // ensure burn estimate is correct
-      let mintRefund = await derivToken.calculateBurnReturn(mintAmt);
-      expect(mintRefund).to.equal(ethers.utils.parseEther(".04"));    // .08 * (P(10)-P(0)) = 1/25
+      let burnRefundExpected = burnTotal(mintAmtRaw, mintAmtRaw).toFixed(12);
+      let burnRefund = await derivToken.calculateBurnReturn(mintAmt);
+      expect(burnRefund).to.equal(parseEther(burnRefundExpected));
 
-      
       // ensure correct balances after burn
       await derivToken.connect(signers[0]).burn(mintAmt);
       expect(await derivToken.balanceOf(signers[0].address)).to.equal(0);
       expect(await derivToken.totalSupply()).to.equal(0);
-      expect(await baseToken.balanceOf(derivToken.address)).to.equal(mintCost.sub(mintRefund));
+      expect(await baseToken.balanceOf(derivToken.address)).to.equal(mintCost.sub(burnRefund));
       expect(
         await baseToken.balanceOf(signers[0].address)
-      ).to.equal(initialBalance.sub(mintCost).add(mintRefund));
+      ).to.equal(initialBalance.sub(mintCost).add(burnRefund));
 
       // ensure poores can't mint
       let balance;
@@ -226,21 +242,77 @@ describe("Testing Tokens", function () {
     }); 
 
     // Test math on valid transactions 
-    it("Price Adjustments", async function () {
-      // write function for calculating mint and burn prices, based on curve parameters
-      function spotPrice() {}
-      function mintPrice() {}
-      function burnPrice() {}
+    it("Mint/Burn Price Accuracy", async function () {
+      const allowance = parseEther((10**12).toString());
 
-      // for varying supplies
+      // increment (mint) side, random decrement checks per loop
+      let mintAmtRaw, mintAmt, totalSupplyRaw = 0;
+      for (let i=0; i<10; i++) {
+        await baseToken.connect(signers[i]).increaseAllowance(derivToken.address, allowance);
+ 
         // mint random value
+        mintAmtRaw = Math.floor(Math.random() * 1000);
+        mintAmt = parseEther(mintAmtRaw.toString());
+        await derivToken.connect(signers[i]).mint(mintAmt);
+        expect(await derivToken.balanceOf(signers[i].address)).to.equal(mintAmt);
+
         // check spot price
-        // check aggregate burn refund for various values
-      
-      // for varying supplies
-        // burn random value
+        totalSupplyRaw += mintAmtRaw;
+        expect(
+          await derivToken.exchangeRate()
+        ).to.equal(parseEther(spotPrice(totalSupplyRaw).toFixed(9)));
+
+        // // Debugging testcases
+        // let treasuryBalance = await derivToken.treasuryBalance();
+        // let reserveRequirement = await derivToken.reserveRequirement();
+        // let areaUnderCurve = await derivToken.areaUnderCurve(parseEther(totalSupplyRaw.toString()));
+        // console.log(`--Mint Loop ${i}--`);
+        // console.log(`  Total Supply: ${totalSupplyRaw}`);
+        // console.log(`  Total Treasury: ${reverseParse(treasuryBalance)}`);
+        // console.log(`  Total Reserve: ${reverseParse(reserveRequirement)}`);
+        // console.log(`  Area Under Curve: ${reverseParse(areaUnderCurve)}`);
+
+        // check burn refund at this supply for various amounts
+        let burnAmtRaw, burnRefund, burnRefExpected;
+        for (let j=0; j<10; j++) {
+          burnAmtRaw = Math.floor(Math.random() * totalSupplyRaw);
+          burnRefExpectedRaw = burnTotal(totalSupplyRaw, burnAmtRaw);
+          burnRefExpected = parseEther(burnRefExpectedRaw.toFixed(9)); 
+          burnRefund = await derivToken.calculateBurnReturn(parseEther(burnAmtRaw.toString()));
+          expect(burnRefund).to.equal(burnRefExpected);
+        }
+
+      }
+
+      // decrement (burn) side, random increment checks per loop
+      let currBalance, burnAmtRaw, burnAmt;
+      for (let i=0; i<10; i++) {
+ 
+        // burn ~half of signer's balance
+        currBalance = await derivToken.balanceOf(signers[i].address);
+        burnAmtRaw = Math.floor(currBalance.div(10**15).div(2).toNumber()/1000);
+        burnAmt = parseEther(burnAmtRaw.toString());
+        await derivToken.connect(signers[i]).burn(burnAmt);
+        expect(await derivToken.balanceOf(signers[i].address)).to.equal(currBalance.sub(burnAmt));
+        
         // check spot price
-        // check aggregate mint price for various values 
-    }); 
+        totalSupplyRaw -= burnAmtRaw;
+        expect(
+          await derivToken.exchangeRate()
+        ).to.equal(parseEther(spotPrice(totalSupplyRaw).toFixed(9)));
+
+        // check mint cost at this supply for various amounts
+        let mintCost, mintCostExpected;
+        for (let j=0; j<10; j++) {
+          mintAmtRaw = Math.floor(Math.random() * totalSupplyRaw);
+          mintCostExpectedRaw = mintTotal(totalSupplyRaw, mintAmtRaw);
+          mintCostExpected = parseEther(mintCostExpectedRaw.toFixed(9)); 
+          mintCost = await derivToken.calculateMintCost(parseEther(mintAmtRaw.toString()));
+          expect(mintCost).to.equal(mintCostExpected);
+        }
+      }
+    });
+
+
   });
 });
