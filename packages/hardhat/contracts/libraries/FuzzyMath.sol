@@ -11,7 +11,7 @@ library FuzzyMath {
 
     /**
      * @dev estimates the equation f(x) = x^(a/b)^
-     * does so by calculating x^a^ and iterating to the b-root of that subtotal
+     * does so by calculating subtotal x^a^ and iterating to the b-root of that subtotal
      * using a generalized form of the Babylonian Method (rounded down to nearest whole #)
      * https://www.researchgate.net/publication/237415858_EXTENDING_THE_BABYLONIAN_ALGORITHM
      * e
